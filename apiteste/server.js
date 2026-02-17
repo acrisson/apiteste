@@ -4,9 +4,10 @@ const { Pool } = require("pg");
 const cors = require("cors");
 
 const app = express();
-const port = 3001;
+const PORT = 3000;
 app.use(express.json());
 app.use(cors());
+
 
 // Conexão PostgreSQL
 const pool = new Pool({
@@ -98,6 +99,6 @@ app.delete("/usuarios/:id", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Servidor rodando na porta ${port}`);
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
