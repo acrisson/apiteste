@@ -1,0 +1,7 @@
+senha :reuniao2026
+reuniaoevehx@gmail.com
+
+ip de público: nslookup myip.opendns.com resolver1.opendns.com
+ip local da rede :ipconfig
+
+db teste  acrisson18#
