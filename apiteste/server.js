@@ -4,7 +4,7 @@ const { Pool } = require("pg");
 const cors = require("cors");
 
 const app = express();
-const PORT = 3000;
+const PORT = 3001;
 
 app.use(express.json());
 app.use(cors());
@@ -136,6 +136,145 @@ app.post("/usuarios", async (req, res) => {
 
   } catch (err) {
     res.status(500).json({ erro: "Erro ao inserir registro" });
+  }
+});
+
+// Buscar usuário por ID
+app.get("/usuarios/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      `SELECT u.*, e.nome as produto_nome
+       FROM usuarioss u
+       JOIN estoque e ON u.productId = e.id
+       WHERE u.id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ erro: "Usuário não encontrado" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ erro: "Erro ao buscar usuário" });
+  }
+});
+
+// Atualizar usuário
+app.put("/usuarios/:id", async (req, res) => {
+  const { id } = req.params;
+  const { nome, setor, quantidade } = req.body;
+
+  try {
+    // Validar dados obrigatórios
+    if (!nome || !setor || quantidade === undefined) {
+      return res.status(400).json({ erro: "Nome, setor e quantidade são obrigatórios" });
+    }
+
+    // Buscar registro atual
+    const current = await pool.query("SELECT * FROM usuarioss WHERE id=$1", [id]);
+    if (current.rows.length === 0) {
+      return res.status(404).json({ erro: "Usuário não encontrado" });
+    }
+
+    const currentRecord = current.rows[0];
+    const oldQuantidade = currentRecord.quantidade;
+    const productId = currentRecord.productid || currentRecord.productId;
+
+    // Verificar se o produto referenciado existe NA TABELA ESTOQUE
+    const produtoCheck = await pool.query("SELECT estoque FROM estoque WHERE id=$1", [productId]);
+    if (produtoCheck.rows.length === 0) {
+      return res.status(404).json({ 
+        erro: `Produto com ID ${productId} não encontrado na tabela estoque` 
+      });
+    }
+
+    // Calcular diferença de quantidade
+    const diff = quantidade - oldQuantidade;
+
+    if (diff > 0) {
+      // Verificar estoque se aumentando quantidade
+      if (produtoCheck.rows[0].estoque < diff) {
+        return res.status(400).json({ erro: "Estoque insuficiente para aumento" });
+      }
+    }
+
+    // Atualizar registro
+    const valorUnit = currentRecord.valorunit;
+    const total = parseFloat(valorUnit) * parseFloat(quantidade);
+
+    const result = await pool.query(
+      `UPDATE usuarioss
+       SET nome=$1, setor=$2, quantidade=$3, total=$4
+       WHERE id=$5
+       RETURNING *`,
+      [nome, setor, parseFloat(quantidade), total, id]
+    );
+
+    // Atualizar estoque
+    if (diff !== 0) {
+      await pool.query(
+        "UPDATE estoque SET estoque = estoque - $1 WHERE id=$2",
+        [diff, productId]
+      );
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Erro ao atualizar usuário:", err);
+    res.status(500).json({ erro: "Erro ao atualizar usuário", detalhes: err.message });
+  }
+});
+
+app.get("/debug/usuarios/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const usuario = await pool.query("SELECT * FROM usuarioss WHERE id=$1", [id]);
+    if (usuario.rows.length === 0) {
+      return res.json({ erro: "Usuário não encontrado" });
+    }
+    
+    const productId = usuario.rows[0].productid || usuario.rows[0].productId;
+    const produto = await pool.query("SELECT * FROM estoque WHERE id=$1", [productId]);
+    
+    res.json({
+      usuario: usuario.rows[0],
+      productId: productId,
+      produtoEncontrado: produto.rows.length > 0,
+      produto: produto.rows[0] || null
+    });
+  } catch (err) {
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// Deletar usuário
+app.delete("/usuarios/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // Buscar registro para restaurar estoque
+    const current = await pool.query("SELECT productId, quantidade FROM usuarioss WHERE id=$1", [id]);
+    if (current.rows.length === 0) {
+      return res.status(404).json({ erro: "Usuário não encontrado" });
+    }
+
+    const { productId, quantidade } = current.rows[0];
+
+    // Deletar registro
+    await pool.query("DELETE FROM usuarioss WHERE id=$1", [id]);
+
+    // Restaurar estoque
+    await pool.query(
+      "UPDATE estoque SET estoque = estoque + $1 WHERE id=$2",
+      [quantidade, productId]
+    );
+
+    res.json({ mensagem: "Usuário deletado com sucesso" });
+  } catch (err) {
+    res.status(500).json({ erro: "Erro ao deletar usuário" });
   }
 });
 
