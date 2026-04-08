@@ -53,7 +53,7 @@ app.put("/produtos/:id", async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE estoque
-       SET nome=$1, valor=$2, estoque=$3
+       SET nome=$1, valor=$2, estoque=$3, updated_at = CURRENT_TIMESTAMP
        WHERE id=$4
        RETURNING *`,
       [nome, valor, estoque, id]
@@ -77,10 +77,54 @@ app.delete("/produtos/:id", async (req, res) => {
   }
 });
 
-
-
-
+// Listar usuários com filtro de mês, ano e setor
 app.get("/usuarios", async (req, res) => {
+  const { mes, ano, setor } = req.query;
+
+  try {
+    let query = `
+      SELECT u.*, e.nome as produto_nome
+      FROM usuarioss u
+      JOIN estoque e ON u.productId = e.id
+      WHERE 1=1
+    `;
+
+    const params = [];
+    let paramIndex = 1;
+
+    if (mes) {
+      query += ` AND EXTRACT(MONTH FROM u.created_at) = $${paramIndex}`;
+      params.push(Number(mes));
+      paramIndex++;
+    }
+
+    if (ano) {
+      query += ` AND EXTRACT(YEAR FROM u.created_at) = $${paramIndex}`;
+      params.push(Number(ano));
+      paramIndex++;
+    }
+
+    if (setor) {
+      query += ` AND u.setor = $${paramIndex}`;
+      params.push(setor);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY u.id DESC`;
+
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Erro ao buscar registros com filtro:", err);
+    res.status(500).json({ erro: "Erro ao buscar registros" });
+  }
+});
+
+
+
+//Listar usuários sem filtro  de mes e ano para teste de consulta sem filtro
+
+/*app.get("/usuarios", async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT u.*, e.nome as produto_nome
@@ -92,7 +136,11 @@ app.get("/usuarios", async (req, res) => {
   } catch (err) {
     res.status(500).json({ erro: "Erro ao buscar registros" });
   }
-});
+});*/
+
+
+
+
 
 app.post("/usuarios", async (req, res) => {
   const { productId, nome, setor, quantidade } = req.body;
@@ -207,7 +255,7 @@ app.put("/usuarios/:id", async (req, res) => {
 
     const result = await pool.query(
       `UPDATE usuarioss
-       SET nome=$1, setor=$2, quantidade=$3, total=$4
+       SET nome=$1, setor=$2, quantidade=$3, total=$4, updated_at = CURRENT_TIMESTAMP
        WHERE id=$5
        RETURNING *`,
       [nome, setor, parseFloat(quantidade), total, id]
